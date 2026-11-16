@@ -112,6 +112,14 @@ Handled here (which call installs an EXIT trap is trap_discovery.py's to read):
     EXIT TERM` with CMD=trap; one whose arguments cannot is not read as a trap.
   * `trap - EXIT` installs nothing and passes; `trap '' EXIT` is reported for
     the missing completion check.
+  * A file that rebinds a command name this gate reads: reported, since the
+    shell would run something other than what is read. That is an alias
+    definition (dash and bash run as sh expand an alias in a script before
+    they parse it, bash with `expand_aliases`; shfmt does not) and a function
+    named for one of READ_BY_NAME.
+  * A trap call with an argument that can expand to several words or none - an
+    unquoted expansion, `"$@"`, a subscript - since every argument after it
+    moves: reported (trap_discovery.exit_traps).
   * A file or a body shfmt cannot parse: reported. So is one holding a
     `$"..."` or `$'...'` string, which bash rewrites before the command runs,
     so no word in it can be read as written (shfmt_ast.special_quote_line).
@@ -177,7 +185,10 @@ from shell_trap_lint.shfmt_ast import (
     Node,
     ShellParseError,
     ShfmtUnavailable,
+    UnreadableCommand,
+    builtin_args,
     call_args,
+    calls,
     line_of,
     literal_word,
     mentions_beyond_read,
@@ -373,7 +384,57 @@ def parse_file(
             "unreadable",
             SPECIAL_QUOTE_MSG.format(where="This file", line=f"line {special}"),
         )
+    rebinding = rebinding_line(tree)
+    if rebinding is not None:
+        line, what = rebinding
+        return found(line, "unreadable", REBINDING_MSG.format(what=what))
     return tree
+
+
+# The commands this gate reads by name - the forms' `exit` and `[`, the
+# wrappers it reads through, and what can end a trap early. A function of one
+# of these names runs in place of the builtin, so the forms would read as
+# written and do something else.
+READ_BY_NAME = frozenset(
+    {
+        "[",
+        "test",
+        "exit",
+        "return",
+        "exec",
+        "eval",
+        "source",
+        ".",
+        "trap",
+        "command",
+        "builtin",
+        "env",
+        "rm",
+    }
+)
+REBINDING_MSG = (
+    "This file {what}, which changes what a command name runs before this "
+    "gate's reading of it applies, so its traps were not checked. Remove it."
+)
+
+
+def rebinding_line(tree: Node) -> tuple[int, str] | None:
+    """The first place a file rebinds a command name this gate reads: an
+    alias definition, which the shell expands before it parses and shfmt does
+    not, or a function named for a command in READ_BY_NAME."""
+    for node in walk(tree):
+        if node.get("Type") == "FuncDecl":
+            name = str((node.get("Name") or {}).get("Value", ""))
+            if name in READ_BY_NAME:
+                return line_of(node), f"defines a function named `{name}`"
+    for call in calls(tree):
+        try:
+            rest = builtin_args(call_args(call), "alias")
+        except UnreadableCommand:
+            continue
+        if rest and any("=" in literal_word(word) for word in rest):
+            return line_of(call), "defines an alias"
+    return None
 
 
 def judge_file(path: str, text: str, tools: Toolchain) -> list[Finding]:
@@ -487,7 +548,7 @@ def judge_body(
                     ),
                 )
             )
-        elif ending is not None and ending.kind == "ends":
+        elif ending is not None:
             findings.append(_hazard_finding(ending, line, found))
         if status is not None and status.kind == "unreadable":
             return findings

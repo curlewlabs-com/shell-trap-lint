@@ -653,5 +653,58 @@ class TheToolchain(unittest.TestCase):
             gate.derive_toolchain("/nonexistent/shfmt")
 
 
+class RebindingACommandName(unittest.TestCase):
+    """The shell can make a name run something other than what this gate reads
+    it as, before any of its reading applies."""
+
+    def test_an_alias_definition_is_unreadable(self) -> None:
+        # bash expands an alias before it parses, and shfmt does not, so
+        # `alias on_exit=trap` installs a trap no call in the tree names.
+        text = suite(
+            f"trap '{GUARDED}; {CHECK}' EXIT",
+            before="shopt -s expand_aliases\nalias on_exit=trap\n",
+            after="on_exit ':' EXIT\n",
+        )
+        self.assertEqual(kinds(text), {"unreadable"})
+
+    def test_an_alias_query_is_not_a_definition(self) -> None:
+        text = suite(f"trap '{GUARDED}; {CHECK}' EXIT", before="alias ll\n")
+        self.assertEqual(kinds(text), set())
+
+    def test_a_function_named_for_a_builtin_the_forms_read(self) -> None:
+        # With `exit` shadowed, the check's `|| exit 1` calls the function, and
+        # an early `builtin exit 0` exits 0.
+        for name in ("exit", "[", "rm", "command"):
+            with self.subTest(name=name):
+                text = suite(
+                    f"trap '{GUARDED}; {CHECK}' EXIT",
+                    before=f"{name}() {{ :; }}\n",
+                )
+                self.assertEqual(kinds(text), {"unreadable"})
+
+
+class WritesThroughAQuotedOperand(unittest.TestCase):
+    def test_let_and_read_on_the_sentinel_are_writes(self) -> None:
+        # `let "SUITE_COMPLETE = 1"` before an abort leaves the 1 set, and bash
+        # 3.2 then exits 0.
+        for write in ('let "SUITE_COMPLETE = 1"', "read 'SUITE_COMPLETE[0]'"):
+            with self.subTest(write=write):
+                text = suite(f"trap '{GUARDED}; {CHECK}' EXIT", after=write + "\n")
+                self.assertEqual(kinds(text), {"lifecycle"})
+
+
+class AnUnreadableHelperBehindAGuard(unittest.TestCase):
+    def test_a_named_handler_reports_it_as_an_inline_body_does(self) -> None:
+        # The guard stops the helper's status reaching the trap, not an exit
+        # 0 inside it, so a helper whose body this gate cannot pin down must
+        # still be reported.
+        helper = "if true; then helper() { exit 0; }; fi\n"
+        handler = f"cleanup() {{\n    helper || echo WARN >&2\n    {CHECK}\n}}\n"
+        named = suite("trap cleanup EXIT", before=helper + handler)
+        inline = suite(f"trap 'helper || echo WARN >&2; {CHECK}' EXIT", before=helper)
+        self.assertIn("unreadable", kinds(named))
+        self.assertIn("unreadable", kinds(inline))
+
+
 if __name__ == "__main__":
     unittest.main()

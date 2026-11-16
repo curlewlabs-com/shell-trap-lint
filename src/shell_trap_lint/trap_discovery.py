@@ -20,6 +20,7 @@ from shell_trap_lint.shfmt_ast import (
     call_args,
     calls,
     expansion_types,
+    field_count_fixed,
     line_of,
     literal_word,
     rewritten_literal,
@@ -103,6 +104,20 @@ def exit_traps[F](
             )
             continue
         if not rest:
+            continue
+        # An argument that can expand to several fields, or to none, moves
+        # every argument after it: `trap "$@"` is one word here and an action
+        # and a signal at run time.
+        if not all(field_count_fixed(word) for word in rest):
+            findings.append(
+                found(
+                    line,
+                    "unreadable",
+                    "this trap call has an argument that can expand to several "
+                    "words or none, so this gate cannot tell which is the action "
+                    "and which the signals. Write each argument as one word.",
+                )
+            )
             continue
         first = literal_word(rest[0])
         # `--` ends trap's options and bash accepts `-l`/`-p`, so the action is

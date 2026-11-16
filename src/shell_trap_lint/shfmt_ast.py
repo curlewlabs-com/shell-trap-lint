@@ -220,6 +220,19 @@ def _many_fields(node: Node) -> bool:
     )
 
 
+def field_count_fixed(word: Node) -> bool:
+    """Whether a word is one field whatever its expansions hold: no unquoted
+    expansion, which splits and globs, and no multi-field one inside double
+    quotes (`"$@"`, a subscript, `"${!p@}"`), which can be any number."""
+    for part in word.get("Parts") or []:
+        kind = part.get("Type")
+        if kind not in ("Lit", "SglQuoted", "DblQuoted"):
+            return False
+        if kind == "DblQuoted" and any(_many_fields(node) for node in walk(part)):
+            return False
+    return True
+
+
 def word_kind(word: Node) -> str:
     """How the shell reads a word: static, a path, or unknown, and nothing
     else. "static": its text is fixed as written - unquoted literals of
@@ -526,7 +539,8 @@ def mentions_beyond_read(value: object, name: str) -> bool:
     assignment, `read`, a `for` variable, `export`, `unset`, `${name:=...}` -
     counts, rather than being told apart, so a gate can fail closed on it. A
     word is compared whole, after quote removal, as the shell reads it, so
-    `read RUN"_COMPLETE"` and `read RUN\\_COMPLETE` name RUN_COMPLETE too. A
+    `read RUN"_COMPLETE"` and `read RUN\\_COMPLETE` name RUN_COMPLETE too, and
+    so does any word naming it as an identifier (_names_beyond_read). A
     `$'...'` piece, whose escapes bash decodes, never reaches here: the gates
     refuse a file or trap body holding one first (special_quote_line)."""
     if isinstance(value, dict):
@@ -539,15 +553,27 @@ def mentions_beyond_read(value: object, name: str) -> bool:
                 for key, member in value.items()
                 if key not in _PLAIN_PARAM_MEMBERS
             )
-        if value.get("Value") == name or name in str(value.get("Value", "")).split("="):
+        if _names_beyond_read(str(value.get("Value", "")), name):
             return True
         if (
             value.get("Type") in (None, "Word")
             and isinstance(value.get("Parts"), list)
-            and name in literal_word(value).split("=")
+            and _names_beyond_read(literal_word(value), name)
         ):
             return True
         return any(mentions_beyond_read(child, name) for child in value.values())
     if isinstance(value, list):
         return any(mentions_beyond_read(child, name) for child in value)
     return False
+
+
+def _names_beyond_read(text: str, name: str) -> bool:
+    """Whether literal text names `name` as an identifier anywhere but in a
+    plain `$name` or `${name}` read: `let "name = 1"`, `read 'name[0]'` and
+    `name=1` all write it through a word the shell reads as a name. Text a
+    command only prints is counted too, the safe direction."""
+    reads = re.compile(
+        rf"\$\{{{re.escape(name)}\}}|\${re.escape(name)}(?![A-Za-z0-9_])"
+    )
+    bare = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])")
+    return bare.search(reads.sub("", text)) is not None
