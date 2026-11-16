@@ -187,6 +187,11 @@ accident: each matters only when a script is written to get past the lint.
 - **A trap's arguments built from `"$@"` are read as one word.** After
   `set -- ':' EXIT`, `trap "$@"` installs an EXIT trap, but the lint reads one
   argument and skips the call as too short to name a signal.
+- **A guarded call from a named handler hides a helper the lint cannot
+  read.** In the test form, `trap cleanup EXIT`, where `cleanup` runs
+  `helper || echo ...` and `helper` is defined inside an `if`, passes even
+  though that `helper` can `exit 0` before the completion check. The same call
+  in an inline trap body is reported.
 
 ## License
 
