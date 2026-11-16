@@ -222,8 +222,12 @@ def _many_fields(node: Node) -> bool:
 
 def field_count_fixed(word: Node) -> bool:
     """Whether a word is one field whatever its expansions hold: no unquoted
-    expansion, which splits and globs, and no multi-field one inside double
-    quotes (`"$@"`, a subscript, `"${!p@}"`), which can be any number."""
+    expansion, which splits and globs, no unquoted literal the shell rewrites
+    (a brace list such as `{:,EXIT}`, a glob), and no multi-field expansion
+    inside double quotes (`"$@"`, a subscript, `"${!p@}"`), which can be any
+    number."""
+    if rewritten_literal(word):
+        return False
     for part in word.get("Parts") or []:
         kind = part.get("Type")
         if kind not in ("Lit", "SglQuoted", "DblQuoted"):

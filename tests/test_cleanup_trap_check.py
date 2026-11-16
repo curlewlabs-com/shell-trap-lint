@@ -667,6 +667,21 @@ class RebindingACommandName(unittest.TestCase):
         )
         self.assertEqual(kinds(text), {"unreadable"})
 
+    def test_an_alias_operand_decided_at_run_time_is_unreadable(self) -> None:
+        # `alias "$definition"` defines whatever the variable holds.
+        text = suite(
+            f"trap '{GUARDED}; {CHECK}' EXIT",
+            before="definition='on_exit=trap'\nalias \"$definition\"\n",
+        )
+        self.assertEqual(kinds(text), {"unreadable"})
+
+    def test_a_rebinding_inside_an_inline_body_is_unreadable(self) -> None:
+        # The body is a string in the file's tree, so a function defined in it
+        # is out of the file-level check's sight; at run time it replaces the
+        # completion check's `exit`.
+        text = suite(f"trap '{GUARDED}; exit() {{ :; }}; {CHECK}' EXIT")
+        self.assertEqual(kinds(text), {"unreadable"})
+
     def test_an_alias_query_is_not_a_definition(self) -> None:
         text = suite(f"trap '{GUARDED}; {CHECK}' EXIT", before="alias ll\n")
         self.assertEqual(kinds(text), set())

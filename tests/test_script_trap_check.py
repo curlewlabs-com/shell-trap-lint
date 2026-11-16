@@ -351,6 +351,11 @@ class TheSavedStatusThroughAQuotedOperand(unittest.TestCase):
         text = f"#!/bin/sh\nRUN_COMPLETE=0\n{trap}\nRUN_COMPLETE=1\n"
         self.assertEqual(kinds(text), {"completion"})
 
+    def test_a_rebinding_inside_an_inline_body_is_unreadable(self) -> None:
+        trap = f'trap \'exit() {{ :; }}; {STATUS}; rm -f "$T"; exit "$_trap_rc"\' EXIT'
+        text = f"#!/bin/sh\nRUN_COMPLETE=0\n{trap}\nRUN_COMPLETE=1\n"
+        self.assertIn("unreadable", kinds(text))
+
     def test_let_on_the_sentinel_is_outside_a_boundary(self) -> None:
         text = (
             f"#!/bin/sh\nRUN_COMPLETE=0\n{SCRIPT_TRAP}\n"

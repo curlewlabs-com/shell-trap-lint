@@ -197,6 +197,7 @@ from shell_trap_lint.shfmt_ast import (
     special_quote_line,
     strip_positions,
     walk,
+    word_kind,
 )
 from shell_trap_lint.trap_discovery import exit_traps
 
@@ -387,7 +388,7 @@ def parse_file(
     rebinding = rebinding_line(tree)
     if rebinding is not None:
         line, what = rebinding
-        return found(line, "unreadable", REBINDING_MSG.format(what=what))
+        return found(line, "unreadable", REBINDING_MSG.format(what=f"file {what}"))
     return tree
 
 
@@ -413,7 +414,7 @@ READ_BY_NAME = frozenset(
     }
 )
 REBINDING_MSG = (
-    "This file {what}, which changes what a command name runs before this "
+    "This {what}, which changes what a command name runs before this "
     "gate's reading of it applies, so its traps were not checked. Remove it."
 )
 
@@ -432,7 +433,11 @@ def rebinding_line(tree: Node) -> tuple[int, str] | None:
             rest = builtin_args(call_args(call), "alias")
         except UnreadableCommand:
             continue
-        if rest and any("=" in literal_word(word) for word in rest):
+        if rest is None:
+            continue
+        if any(word_kind(word) != "static" for word in rest):
+            return line_of(call), "runs `alias` on an operand decided at run time"
+        if any("=" in literal_word(word) for word in rest):
             return line_of(call), "defines an alias"
     return None
 
@@ -579,6 +584,15 @@ def judge_body(
                 SPECIAL_QUOTE_MSG.format(
                     where="This cleanup trap body", line=f"its line {special}"
                 ),
+            )
+        ]
+    rebinding = rebinding_line(body_tree)
+    if rebinding is not None:
+        return [
+            found(
+                line,
+                "unreadable",
+                REBINDING_MSG.format(what=f"cleanup trap body {rebinding[1]}"),
             )
         ]
     removes, unknown = unguarded_rm_lines(body_tree, tools.or_op)

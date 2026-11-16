@@ -42,6 +42,7 @@ from functools import cache
 
 from shell_trap_lint.cleanup_trap_check import (
     HANDLER_NAME,
+    REBINDING_MSG,
     SPECIAL_QUOTE_MSG,
     Finding,
     Toolchain,
@@ -50,6 +51,7 @@ from shell_trap_lint.cleanup_trap_check import (
     ends_with_check,
     parse_file,
     plain_value,
+    rebinding_line,
 )
 from shell_trap_lint.shell_reach import Reach, all_calls, ending_spots, function_hazards
 from shell_trap_lint.shfmt_ast import (
@@ -284,6 +286,16 @@ def judge_script(path: str, text: str, tools: Toolchain) -> list[Finding]:
                             where="This cleanup trap body",
                             line=f"its line {special}",
                         ),
+                    )
+                )
+                continue
+            rebinding = rebinding_line(body_tree)
+            if rebinding is not None:
+                findings.append(
+                    found(
+                        line_of(call),
+                        "unreadable",
+                        REBINDING_MSG.format(what=f"cleanup trap body {rebinding[1]}"),
                     )
                 )
                 continue

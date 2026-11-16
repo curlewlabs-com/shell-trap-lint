@@ -170,6 +170,17 @@ rebinds at run time. It does not see:
 The module headers in `src/shell_trap_lint/` list every case handled and
 every case left out.
 
+## Limits
+
+The lint catches the traps people write, not a script written to get past it.
+It reads one file's syntax and reports the constructs it knows of that rebind
+or rewrite a command (above). A script can still change at run time what a
+command does in ways no single file's syntax shows: a builtin disabled with
+`enable -n`, a function or alias a sourced file defines, an `eval` string, a
+command reached through a variable. Such a script can pass. A shape of that
+kind found in real code is a bug worth reporting, but the lint does not promise
+to have closed every one.
+
 ## Known issues
 
 None open.

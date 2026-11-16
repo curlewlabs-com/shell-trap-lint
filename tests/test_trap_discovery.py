@@ -156,6 +156,10 @@ class ArgumentsThatSplit(unittest.TestCase):
             'trap -- "$@"',
             'trap "${ARGS[@]}"',
             "trap $ARGS",
+            # A brace list and a glob are literals the shell rewrites into
+            # several words: `trap {:,EXIT}` runs `trap : EXIT`.
+            "trap {:,EXIT}",
+            "trap *",
         ):
             with self.subTest(source=source):
                 self.assertEqual(discover(source), ([], ["unreadable"]))
