@@ -144,5 +144,29 @@ class ARunTimeCommand(unittest.TestCase):
                 self.assertEqual(discover(call), ([], []))
 
 
+class ArgumentsThatSplit(unittest.TestCase):
+    def test_an_argument_that_can_expand_to_several_words(self) -> None:
+        # `"$@"` is one word in the tree and an action and a signal at run
+        # time, so `set -- ':' EXIT; trap "$@"` installs an EXIT trap a count of
+        # the written arguments skips.
+        for source in (
+            'trap "$@"',
+            'command trap "$@"',
+            'builtin trap "$@"',
+            'trap -- "$@"',
+            'trap "${ARGS[@]}"',
+            "trap $ARGS",
+            # A brace list and a glob are literals the shell rewrites into
+            # several words: `trap {:,EXIT}` runs `trap : EXIT`.
+            "trap {:,EXIT}",
+            "trap *",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(discover(source), ([], ["unreadable"]))
+
+    def test_an_expansion_inside_a_quoted_action_is_one_word(self) -> None:
+        self.assertEqual(discover('trap "rm -rf $D" EXIT'), (["rm -rf X"], []))
+
+
 if __name__ == "__main__":
     unittest.main()

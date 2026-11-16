@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "shell-trap-lint"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lint shell EXIT traps that let a run that stopped short exit 0, or a failed teardown fail a test."
 readme = "README.md"
 license = "MIT"

@@ -343,5 +343,26 @@ class WhatIsLeftAlone(unittest.TestCase):
         self.assertNotIn("rm", kinds(text))
 
 
+class TheSavedStatusThroughAQuotedOperand(unittest.TestCase):
+    def test_let_on_trap_rc_in_the_cleanup_is_a_write(self) -> None:
+        # `let "_trap_rc = 0" || :` overwrites a saved failure, and the final
+        # exit then publishes success.
+        trap = f'trap \'{STATUS}; let "_trap_rc = 0" || :; exit "$_trap_rc"\' EXIT'
+        text = f"#!/bin/sh\nRUN_COMPLETE=0\n{trap}\nRUN_COMPLETE=1\n"
+        self.assertEqual(kinds(text), {"completion"})
+
+    def test_a_rebinding_inside_an_inline_body_is_unreadable(self) -> None:
+        trap = f'trap \'exit() {{ :; }}; {STATUS}; rm -f "$T"; exit "$_trap_rc"\' EXIT'
+        text = f"#!/bin/sh\nRUN_COMPLETE=0\n{trap}\nRUN_COMPLETE=1\n"
+        self.assertIn("unreadable", kinds(text))
+
+    def test_let_on_the_sentinel_is_outside_a_boundary(self) -> None:
+        text = (
+            f"#!/bin/sh\nRUN_COMPLETE=0\n{SCRIPT_TRAP}\n"
+            'let "RUN_COMPLETE = 1"\nRUN_COMPLETE=1\n'
+        )
+        self.assertEqual(kinds(text), {"lifecycle"})
+
+
 if __name__ == "__main__":
     unittest.main()

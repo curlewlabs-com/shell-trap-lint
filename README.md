@@ -59,7 +59,7 @@ It needs Python 3.12 or newer and `shfmt` on `PATH`. It has no Python
 dependencies.
 
 ```sh
-pip install git+https://github.com/curlewlabs-com/shell-trap-lint@v0.1.0
+pip install git+https://github.com/curlewlabs-com/shell-trap-lint@v0.1.1
 
 shell-trap-lint deploy.sh scripts/*.sh   # scripts
 shell-trap-lint --test tests/*.sh        # tests
@@ -146,7 +146,13 @@ shells do (`EXIT`, `Exit`, `0`, `00`), reads `trap` through `command` and
 
 It reports, rather than guesses at:
 
-- a trap whose action, signal list or command word is an expansion;
+- a trap whose action, signal list or command word is an expansion, or whose
+  arguments include one that can expand to several words or none
+  (`trap "$@"`);
+- an alias definition, which the shell expands before it parses (dash and
+  `sh` in any script, bash with `expand_aliases`) and shfmt does not, and a
+  function named for a command the lint reads by name (`exit`, `[`, `test`,
+  `rm`, `trap` and the wrappers);
 - a handler this file does not define, or defines more than once, inside a
   branch, or inside another function;
 - a file or trap body shfmt cannot parse;
@@ -160,38 +166,24 @@ rebinds at run time. It does not see:
 - teardown verbs other than `rm`;
 - wrappers other than `command`, `exec` and `env`.
 
-Known issues below lists more constructs it misses.
 
 The module headers in `src/shell_trap_lint/` list every case handled and
 every case left out.
 
+## Limits
+
+The lint catches the traps people write, not a script written to get past it.
+It reads one file's syntax and reports the constructs it knows of that rebind
+or rewrite a command (above). A script can still change at run time what a
+command does in ways no single file's syntax shows: a builtin disabled with
+`enable -n`, a function or alias a sourced file defines, an `eval` string, a
+command reached through a variable. Such a script can pass. A shape of that
+kind found in real code is a bug worth reporting, but the lint does not promise
+to have closed every one.
+
 ## Known issues
 
-Each of these passes a file the forms would reject, where the lint should
-report it as unreadable instead. None of them is a shape that appears by
-accident: each matters only when a script is written to get past the lint.
-
-- **Aliases are not expanded.** `shopt -s expand_aliases; alias on_exit=trap;
-  on_exit ':' EXIT` installs an EXIT trap the lint does not see, because bash
-  expands an alias before it parses and shfmt does not.
-- **A same-file function can shadow a builtin the forms rely on.** With
-  `exit() { :; }` defined, the trap's `|| exit 1` calls the function, and an
-  early `builtin exit 0` then exits 0. The forms are compared as written and do
-  not check what `exit` or `[` is bound to.
-- **A sentinel written through a quoted operand is not seen as a write.**
-  `let "SUITE_COMPLETE = 1"`, `let "RUN_COMPLETE = 1"`,
-  `read 'SUITE_COMPLETE[0]'`, and `let "_trap_rc = 0"` in the script form's
-  cleanup each change the value the trap reads. The lint counts a word as a
-  write only when the whole word, or one side of an `=` in it, is exactly the
-  name, so a space or an index hides it.
-- **A trap's arguments built from `"$@"` are read as one word.** After
-  `set -- ':' EXIT`, `trap "$@"` installs an EXIT trap, but the lint reads one
-  argument and skips the call as too short to name a signal.
-- **A guarded call from a named handler hides a helper the lint cannot
-  read.** In the test form, `trap cleanup EXIT`, where `cleanup` runs
-  `helper || echo ...` and `helper` is defined inside an `if`, passes even
-  though that `helper` can `exit 0` before the completion check. The same call
-  in an inline trap body is reported.
+None open.
 
 ## License
 
