@@ -5,8 +5,10 @@
 A lint for the EXIT traps in shell scripts and shell tests. It reports a trap
 that can let a run that stopped short exit 0, and, for a test, a trap whose
 failed cleanup can fail a test that passed. It reads each file through
-[shfmt](https://github.com/mvdan/sh)'s syntax tree rather than its text, and
-when it cannot read a trap it reports it as a finding instead of skipping it.
+[shfmt](https://github.com/mvdan/sh)'s syntax tree rather than its text. A
+trap whose action or signals it cannot read statically is reported as a
+finding, not skipped. The constructs it cannot see at all are listed under
+[What it reads](#what-it-reads-and-what-it-does-not).
 
 ## Why it exists
 
@@ -69,8 +71,10 @@ stderr, when it cannot run at all (for example, no `shfmt` on `PATH`), so a
 lint that examined nothing never reads as clean. `python3 -m shell_trap_lint`
 works the same way.
 
-A file with no EXIT trap passes. `trap - EXIT` passes too, since it installs
-nothing.
+A test with no EXIT trap passes, and so does `trap - EXIT`, which installs
+nothing. In the script form, `RUN_COMPLETE` and `SUITE_COMPLETE` are reserved
+in every file it judges, whether or not the file has a trap: each write of
+either must sit where the forms below allow one.
 
 ### Scripts: the script form
 
@@ -148,19 +152,38 @@ It reports, rather than guesses at:
 - a file or trap body shfmt cannot parse;
 - a `$"..."` or `$'...'` string.
 
-It reads one file at a time. It does not see:
+It reads one file at a time, and it reads syntax, not what the shell
+rebinds at run time. It does not see:
 
 - functions defined in a sourced library;
 - the contents of an `eval` string;
 - teardown verbs other than `rm`;
 - wrappers other than `command`, `exec` and `env`.
 
+Known issues below lists three more constructs it misses.
+
 The module headers in `src/shell_trap_lint/` list every case handled and
 every case left out.
 
 ## Known issues
 
-None recorded yet.
+Each of these passes a file the forms would reject, where the lint should
+report it as unreadable instead. None of them is a shape that appears by
+accident: each matters only when a script is written to get past the lint.
+
+- **Aliases are not expanded.** `shopt -s expand_aliases; alias on_exit=trap;
+  on_exit ':' EXIT` installs an EXIT trap the lint does not see, because bash
+  expands an alias before it parses and shfmt does not.
+- **A same-file function can shadow a builtin the forms rely on.** With
+  `exit() { :; }` defined, the trap's `|| exit 1` calls the function, and an
+  early `builtin exit 0` then exits 0. The forms are compared as written and do
+  not check what `exit` or `[` is bound to.
+- **A sentinel written through a quoted operand is not seen as a write.**
+  `let "SUITE_COMPLETE = 1"`, `let "RUN_COMPLETE = 1"`,
+  `read 'SUITE_COMPLETE[0]'`, and `let "_trap_rc = 0"` in the script form's
+  cleanup each change the value the trap reads. The lint counts a word as a
+  write only when the whole word, or one side of an `=` in it, is exactly the
+  name, so a space or an index hides it.
 
 ## License
 
