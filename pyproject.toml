@@ -40,4 +40,4 @@ extend-select = ["I", "UP", "B"]
 python_version = "3.12"
 strict = true
 mypy_path = "src"
-files = ["src", "tests"]
+files = ["src", "tests", "tools"]

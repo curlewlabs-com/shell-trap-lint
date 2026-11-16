@@ -35,8 +35,9 @@ ruff format --check . && ruff check . && mypy
 - **Pin dependencies exactly.** An action reference is its release's commit
   SHA with the version beside it, since a tag can be moved. The tools in
   `requirements-dev.txt` and the shfmt CI installs are exact versions.
-  Renovate proposes their updates. A pin written inline needs a `# renovate:`
-  comment above it saying what the literal is.
+  Renovate proposes their updates. After a bump of `SHFMT_VERSION`, `python3
+  tools/refresh_shfmt.py` rewrites the digests beside it. A pin written inline
+  needs a `# renovate:` comment above it saying what the literal is.
 - **Comments explain why, not what.**
 - **Keep tracked text ASCII.** Use plain hyphens and words instead of Unicode
   punctuation or decorative symbols.
