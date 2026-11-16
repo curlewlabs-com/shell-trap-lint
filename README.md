@@ -160,7 +160,7 @@ rebinds at run time. It does not see:
 - teardown verbs other than `rm`;
 - wrappers other than `command`, `exec` and `env`.
 
-Known issues below lists three more constructs it misses.
+Known issues below lists more constructs it misses.
 
 The module headers in `src/shell_trap_lint/` list every case handled and
 every case left out.
@@ -184,6 +184,9 @@ accident: each matters only when a script is written to get past the lint.
   cleanup each change the value the trap reads. The lint counts a word as a
   write only when the whole word, or one side of an `=` in it, is exactly the
   name, so a space or an index hides it.
+- **A trap's arguments built from `"$@"` are read as one word.** After
+  `set -- ':' EXIT`, `trap "$@"` installs an EXIT trap, but the lint reads one
+  argument and skips the call as too short to name a signal.
 
 ## License
 
