@@ -1,0 +1,106 @@
+name: CI
+
+# Every pull request and push to main runs the checks a contributor runs
+# locally. The weekly run catches what changes outside this repository - the
+# runner images and the shells and python3 they carry - before a user does.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Install the pinned tools
+        run: python -m pip install -r requirements-dev.txt
+      - name: ruff format
+        run: ruff format --check .
+      - name: ruff check
+        run: ruff check .
+      - name: mypy (strict)
+        run: mypy
+      - name: shellcheck
+        run: shellcheck .github/install-shfmt.sh
+
+  test:
+    # The oldest Python the package supports, and the python3 each runner
+    # image ships, on Linux x86_64 and arm64 and on macOS, whose /bin/sh is the
+    # bash 3.2 that exits 0 after an abort - the case the lint exists for.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            python: "3.12"
+          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
+          - runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: matrix.python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install shfmt
+        run: |
+          .github/install-shfmt.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -t . -v
+      - name: The installed command
+        # The console script as a user installs it, judging a file it should
+        # pass and one it should not.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install .
+          printf '#!/bin/sh\necho ok\n' > "$RUNNER_TEMP/clean.sh"
+          printf '#!/bin/sh\nset -eu\ntrap '\''rm -f x'\'' EXIT\n' > "$RUNNER_TEMP/bad.sh"
+          "$RUNNER_TEMP/venv/bin/shell-trap-lint" "$RUNNER_TEMP/clean.sh"
+          if "$RUNNER_TEMP/venv/bin/shell-trap-lint" "$RUNNER_TEMP/bad.sh"; then
+            echo "expected a finding" >&2
+            exit 1
+          fi
+
+  actionlint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run actionlint
+        # The installer script is pinned to a commit rather than its main
+        # branch, and fetches the release named after it. Renovate moves the
+        # release; the script's commit moves by hand, and need not match.
+        run: |
+          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
+  conclusion:
+    # The one check branch protection requires, so adding or renaming a job
+    # above needs no settings change - only this list.
+    needs: [lint, test, actionlint]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Require every job to pass
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          ACTIONLINT: ${{ needs.actionlint.result }}
+        run: test "$LINT" = success && test "$TEST" = success && test "$ACTIONLINT" = success
