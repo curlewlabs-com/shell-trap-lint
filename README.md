@@ -21,8 +21,7 @@ variable, bash 3.2 runs the EXIT trap with a stale `$?` (the status of the
 last command that completed) and exits with the trap's own status. bash 3.2
 is the `/bin/sh` and `/bin/bash` macOS ships. Every assertion or step after
 the unbound reference is skipped, and the run reports success. Saving
-`rc=$?` inside the trap saves the same stale value. Even `trap '' EXIT` exits
-0.
+`rc=$?` inside the trap saves the same stale value. Even `trap '' EXIT` exits 0.
 
 **A trap's failing command replaces the run's status.** Under `set -e`, a
 command that fails inside the trap trips errexit there, so a test whose
@@ -42,12 +41,12 @@ echo "$UNSET_VAR"
 The second column swaps the trap for `trap 'false' EXIT` on a run that
 completes.
 
-| shell | `set -u` abort exits | failing trap on a completed run exits |
-| --- | --- | --- |
-| macOS `/bin/sh` (bash 3.2.57) | **0** | 1 |
-| macOS `/bin/bash` (bash 3.2.57) | **0** | 1 |
-| dash | 2 | 1 |
-| bash 5 | 1 | 1 |
+| shell                           | `set -u` abort exits | failing trap on a completed run exits |
+| ------------------------------- | -------------------- | ------------------------------------- |
+| macOS `/bin/sh` (bash 3.2.57)   | **0**                | 1                                     |
+| macOS `/bin/bash` (bash 3.2.57) | **0**                | 1                                     |
+| dash                            | 2                    | 1                                     |
+| bash 5                          | 1                    | 1                                     |
 
 The trap cannot read anything that tells an abort from a pass. So the fix is
 for the script to record that it finished, and for the trap to check that
@@ -165,7 +164,6 @@ rebinds at run time. It does not see:
 - the contents of an `eval` string;
 - teardown verbs other than `rm`;
 - wrappers other than `command`, `exec` and `env`.
-
 
 The module headers in `src/shell_trap_lint/` list every case handled and
 every case left out.
