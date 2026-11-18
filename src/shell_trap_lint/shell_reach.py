@@ -24,7 +24,9 @@ from shell_trap_lint.shfmt_ast import (
     current_shell_calls,
     effective_command,
     line_of,
+    list_member,
     literal_word,
+    node_member,
     offset,
     unwrap,
     walk,
@@ -196,8 +198,8 @@ def single_definitions(tree: Node) -> tuple[dict[str, Node], dict[str, int]]:
             every.setdefault(str(node["Name"]["Value"]), []).append(node)
     top = {
         id(statement.get("Cmd"))
-        for statement in tree.get("Stmts") or []
-        if (statement.get("Cmd") or {}).get("Type") == "FuncDecl"
+        for statement in list_member(tree, "Stmts")
+        if node_member(statement, "Cmd").get("Type") == "FuncDecl"
     }
     single = {
         name: nodes[0]

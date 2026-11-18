@@ -14,9 +14,21 @@ import json
 import re
 import subprocess
 from collections.abc import Iterator, Sequence
-from typing import Any
+from typing import Any, TypeGuard
 
 Node = dict[str, Any]
+
+
+# is_node(value) narrows to dict[Unknown, Unknown], which strict
+# type checking rejects wherever the result is read; these say what the
+# check establishes, with the same runtime test.
+def is_node(value: object) -> TypeGuard[Node]:
+    return isinstance(value, dict)
+
+
+def is_list(value: object) -> TypeGuard[list[Any]]:
+    return isinstance(value, list)
+
 
 COMMAND_OPTIONS = re.compile(r"-[pvV]+")
 
@@ -52,18 +64,18 @@ def parse_shell(text: str, shfmt: str) -> Node:
         tree = json.loads(result.stdout)
     except ValueError as error:
         raise ShellParseError(f"shfmt emitted no JSON tree: {error}") from error
-    if not isinstance(tree, dict):
+    if not is_node(tree):
         raise ShellParseError("shfmt emitted a JSON tree that is not an object")
     return tree
 
 
 def walk(value: object) -> Iterator[Node]:
     """Every object in the tree, a node before its children, in source order."""
-    if isinstance(value, dict):
+    if is_node(value):
         yield value
         for child in value.values():
             yield from walk(child)
-    elif isinstance(value, list):
+    elif is_list(value):
         for child in value:
             yield from walk(child)
 
@@ -86,7 +98,7 @@ def current_shell_calls(value: object) -> Iterator[Node]:
     bash's `${ ...; }` and `${| ...; }`, which shfmt marks on its command
     substitution node and bash runs in the current environment (Bash
     Reference Manual, "Command Substitution")."""
-    if isinstance(value, dict):
+    if is_node(value):
         current_shell_substitution = value.get("TempFile") or value.get("ReplyVar")
         if (
             value.get("Type") in _CHILD_SHELLS and not current_shell_substitution
@@ -96,7 +108,7 @@ def current_shell_calls(value: object) -> Iterator[Node]:
             yield value
         for child in value.values():
             yield from current_shell_calls(child)
-    elif isinstance(value, list):
+    elif is_list(value):
         for child in value:
             yield from current_shell_calls(child)
 
@@ -111,7 +123,7 @@ def line_of(node: Node) -> int:
 
 def call_args(call: Node) -> list[Node]:
     args = call.get("Args")
-    return args if isinstance(args, list) else []
+    return args if is_list(args) else []
 
 
 def word_text(word: object) -> str:
@@ -119,10 +131,10 @@ def word_text(word: object) -> str:
     expansion becoming the inert `X`: for showing a word in a message only. A
     trap body is re-parsed from literal_word, which removes quotes as the
     shell does."""
-    if not isinstance(word, dict):
+    if not is_node(word):
         return ""
-    text = []
-    for part in word.get("Parts") or []:
+    text: list[str] = []
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if kind == "Lit":
             text.append(str(part.get("Value", "")))
@@ -156,10 +168,10 @@ def literal_word(word: object) -> str:
     becomes the inert `X`: re-parsed, the action keeps its own command
     structure while `$D` may stand for anything harmless; blanking it would
     delete arguments and could join words."""
-    if not isinstance(word, dict):
+    if not is_node(word):
         return ""
-    text = []
-    for part in word.get("Parts") or []:
+    text: list[str] = []
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if kind == "Lit":
             raw = str(part.get("Value", "")).replace("\\\n", "")
@@ -182,15 +194,27 @@ def literal_word(word: object) -> str:
     return "".join(text)
 
 
+def list_member(node: Node, key: str) -> list[Any]:
+    """The list `node` holds under `key`, empty when it holds nothing."""
+    items: list[Any] = node.get(key) or []
+    return items
+
+
+def node_member(node: Node, key: str) -> Node:
+    """The object `node` holds under `key`, empty when it holds nothing."""
+    member: Node = node.get(key) or {}
+    return member
+
+
 def _inner_parts(part: Node) -> list[Node]:
     parts = part.get("Parts")
-    return parts if isinstance(parts, list) else []
+    return parts if is_list(parts) else []
 
 
 def word_is_expansion(word: Node) -> bool:
     """True when nothing in the word is literal, so its text stands for nothing
     this file can read."""
-    for part in word.get("Parts") or []:
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if kind in ("Lit", "SglQuoted"):
             return False
@@ -214,7 +238,7 @@ def _many_fields(node: Node) -> bool:
     quotes: `"$@"`, an array subscript, `"${!prefix@}"`. Any subscript counts,
     since this reading does not tell `[@]` from `[0]`."""
     return node.get("Type") == "ParamExp" and bool(
-        (node.get("Param") or {}).get("Value") == "@"
+        node_member(node, "Param").get("Value") == "@"
         or node.get("Index")
         or node.get("Names")
     )
@@ -228,7 +252,7 @@ def field_count_fixed(word: Node) -> bool:
     number."""
     if rewritten_literal(word):
         return False
-    for part in word.get("Parts") or []:
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if kind not in ("Lit", "SglQuoted", "DblQuoted"):
             return False
@@ -250,7 +274,7 @@ def word_kind(word: Node) -> str:
     "Locale-Specific Translation") and `$'...'` (escapes this reading does not
     decode)."""
     static, slash = True, False
-    for part in word.get("Parts") or []:
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if part.get("Dollar") or kind not in ("Lit", "SglQuoted", "DblQuoted"):
             return "unknown"
@@ -283,7 +307,7 @@ def rewritten_literal(word: Node) -> bool:
         and not _STATIC_LITERAL.fullmatch(
             _UNQUOTED_ESCAPE.sub("", str(part.get("Value", "")))
         )
-        for part in word.get("Parts") or []
+        for part in list_member(word, "Parts")
     )
 
 
@@ -311,7 +335,7 @@ def expansion_types(word: Node) -> set[str]:
     substring, a subscript, or a member a later shfmt adds - is `ParamExpOp`,
     since its text need not be the parameter's value."""
     types: set[str] = set()
-    for part in word.get("Parts") or []:
+    for part in list_member(word, "Parts"):
         kind = str(part.get("Type"))
         # A ParamExp carries a `Dollar` position too; only on a quote is it the
         # `$"..."` / `$'...'` flag.
@@ -333,7 +357,7 @@ def word_pieces(word: Node) -> list[str | None]:
     removal (literal_word's escapes), and None for each expansion, whose text
     is decided at run time - `$"..."` and `$'...'` included."""
     pieces: list[str | None] = []
-    for part in word.get("Parts") or []:
+    for part in list_member(word, "Parts"):
         kind = part.get("Type")
         if part.get("Dollar"):
             pieces.append(None)
@@ -378,13 +402,13 @@ def strip_positions(value: object) -> object:
     """The tree with every source position removed, so one statement compares
     equal wherever it is written. shfmt gives each position as an object holding
     an Offset, whatever the field is called."""
-    if isinstance(value, dict):
+    if is_node(value):
         return {
             key: strip_positions(child)
             for key, child in value.items()
-            if not (isinstance(child, dict) and "Offset" in child)
+            if not (is_node(child) and "Offset" in child)
         }
-    if isinstance(value, list):
+    if is_list(value):
         return [strip_positions(child) for child in value]
     return value
 
@@ -547,10 +571,10 @@ def mentions_beyond_read(value: object, name: str) -> bool:
     so does any word naming it as an identifier (_names_beyond_read). A
     `$'...'` piece, whose escapes bash decodes, never reaches here: the gates
     refuse a file or trap body holding one first (special_quote_line)."""
-    if isinstance(value, dict):
+    if is_node(value):
         if (
             value.get("Type") == "ParamExp"
-            and (value.get("Param") or {}).get("Value") == name
+            and node_member(value, "Param").get("Value") == name
         ):
             return any(
                 member
@@ -561,12 +585,12 @@ def mentions_beyond_read(value: object, name: str) -> bool:
             return True
         if (
             value.get("Type") in (None, "Word")
-            and isinstance(value.get("Parts"), list)
+            and is_list(value.get("Parts"))
             and _names_beyond_read(literal_word(value), name)
         ):
             return True
         return any(mentions_beyond_read(child, name) for child in value.values())
-    if isinstance(value, list):
+    if is_list(value):
         return any(mentions_beyond_read(child, name) for child in value)
     return False
 

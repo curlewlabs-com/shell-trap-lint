@@ -58,9 +58,13 @@ from shell_trap_lint.shfmt_ast import (
     Node,
     ShellParseError,
     ShfmtUnavailable,
+    is_list,
+    is_node,
     line_of,
+    list_member,
     literal_word,
     mentions_beyond_read,
+    node_member,
     parse_shell,
     special_quote_line,
     strip_positions,
@@ -94,10 +98,10 @@ def _initialized_before(tree: Node, name: str, trap: Node) -> bool:
     would then read whatever the environment exported."""
     for node in walk(tree):
         for value in node.values():
-            if not isinstance(value, list):
+            if not is_list(value):
                 continue
             for index, statement in enumerate(value):
-                if isinstance(statement, dict) and statement.get("Cmd") is trap:
+                if is_node(statement) and statement.get("Cmd") is trap:
                     return any(
                         plain_value(earlier, name) == "0" for earlier in value[:index]
                     )
@@ -134,7 +138,8 @@ def _cleanup_breaks_status(middle: list[Node], reach: Reach) -> str | None:
     early = _early_end(holder, reach, returns=True, inline=True)
     if early:
         return early
-    pending, seen = all_calls(holder, reach.bodies), set()
+    pending = all_calls(holder, reach.bodies)
+    seen: set[str] = set()
     while pending:
         name = pending.pop()
         if name in seen:
@@ -168,8 +173,8 @@ def _is_settled_exit(statement: Node) -> bool:
     the exit itself, after the sentinel it follows is already 1, and macOS
     /bin/sh answers an extra or non-numeric argument with a usage error rather
     than the exit written."""
-    command = statement.get("Cmd") or {}
-    args = command.get("Args") or []
+    command = node_member(statement, "Cmd")
+    args = list_member(command, "Args")
     return (
         not statement.get("Background")
         and not statement.get("Redirs")
@@ -184,9 +189,9 @@ def _is_settled_exit(statement: Node) -> bool:
 
 def _is_statement_list(value: object) -> bool:
     return (
-        isinstance(value, list)
+        is_list(value)
         and bool(value)
-        and all(isinstance(item, dict) and "Cmd" in item for item in value)
+        and all(is_node(item) and "Cmd" in item for item in value)
     )
 
 
@@ -195,13 +200,13 @@ def _own_part(value: object) -> object:
     branch, a function's block - which boundary_violations visits on their own,
     so a compound statement answers only for its own words: a `for` variable,
     an arithmetic assignment, a redirection."""
-    if isinstance(value, dict):
+    if is_node(value):
         return {
             key: _own_part(child)
             for key, child in value.items()
             if not _is_statement_list(child)
         }
-    if isinstance(value, list):
+    if is_list(value):
         return [_own_part(child) for child in value]
     return value
 
@@ -214,7 +219,7 @@ def boundary_violations(tree: Node, name: str) -> list[int]:
     can still abort, and any other write - by any kind of statement - is not
     read here. The `exit` must be one that cannot itself abort
     (_is_settled_exit)."""
-    top = tree.get("Stmts") or []
+    top = list_member(tree, "Stmts")
     lines: list[int] = []
     for node in walk(tree):
         for value in node.values():
@@ -308,7 +313,7 @@ def judge_script(path: str, text: str, tools: Toolchain) -> list[Finding]:
                             line_of(call), "lifecycle", BOUNDARY_MSG.format(name=name)
                         )
                     )
-            statements = body_tree.get("Stmts") or []
+            statements = list_member(body_tree, "Stmts")
             if ends_with_check(body_tree, tools.canon):
                 form = "SUITE_COMPLETE"
                 reason = _early_end(body_tree, reach, returns=True, inline=True)
@@ -340,7 +345,7 @@ def script_form(shfmt: str) -> tuple[object, object, object]:
         tree = parse_shell(SCRIPT_FORM.replace("<cleanup>", "true") + "\n", shfmt)
     except (ShellParseError, ShfmtUnavailable) as error:
         raise ToolchainError(f"shfmt rejected the script form: {error}") from error
-    statements = tree.get("Stmts") or []
+    statements = list_member(tree, "Stmts")
     if len(statements) != 4:
         raise ToolchainError("could not read shfmt AST for the script form")
     return (
