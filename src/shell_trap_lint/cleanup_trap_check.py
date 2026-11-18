@@ -189,9 +189,12 @@ from shell_trap_lint.shfmt_ast import (
     builtin_args,
     call_args,
     calls,
+    is_node,
     line_of,
+    list_member,
     literal_word,
     mentions_beyond_read,
+    node_member,
     offset,
     parse_shell,
     special_quote_line,
@@ -263,9 +266,9 @@ class Finding:
 
 
 def ends_with_check(statements_holder: object, canon: object) -> bool:
-    if not isinstance(statements_holder, dict):
+    if not is_node(statements_holder):
         return False
-    statements = statements_holder.get("Stmts") or []
+    statements = list_member(statements_holder, "Stmts")
     return bool(statements) and strip_positions(statements[-1]) == canon
 
 
@@ -277,7 +280,7 @@ def completing_handlers(tree: Node, canon: object) -> dict[str, bool]:
     single, _ = single_definitions(tree)
     done: dict[str, bool] = {}
     for name, node in single.items():
-        body = (node.get("Body") or {}).get("Cmd") or {}
+        body = node_member(node_member(node, "Body"), "Cmd")
         done[name] = body.get("Type") == "Block" and ends_with_check(body, canon)
     return done
 
@@ -292,16 +295,16 @@ def plain_value(statement: Node, name: str = SENTINEL) -> str | None:
     other statement key fails closed: bash assigns before it expands a
     redirection, so `SUITE_COMPLETE=1 >"$UNSET"` aborts with the 1 already
     set, and `&`, `!` or a coprocess change where or how it runs."""
-    command = statement.get("Cmd") or {}
+    command = node_member(statement, "Cmd")
     if command.get("Type") != "CallExpr" or any(
         value for key, value in statement.items() if key not in _BARE_STATEMENT
     ):
         return None
-    assigns = command.get("Assigns") or []
+    assigns = list_member(command, "Assigns")
     if call_args(command) or len(assigns) != 1:
         return None
     assign = assigns[0]
-    if (assign.get("Name") or {}).get("Value") != name:
+    if node_member(assign, "Name").get("Value") != name:
         return None
     if assign.get("Append") or assign.get("Index") or assign.get("Array"):
         return None
@@ -313,7 +316,7 @@ def lifecycle_holds(tree: Node, trap_offset: int) -> bool:
     by the file's last top-level statement, and written nowhere else. An
     earlier write of 1 - or an `unset`, `read` or `export` of it - leaves it 1
     while code after it can still abort, so the trap would pass that run."""
-    statements = tree.get("Stmts") or []
+    statements = list_member(tree, "Stmts")
     inits = [
         statement
         for statement in statements
@@ -360,7 +363,7 @@ def derive_toolchain(shfmt: str = "shfmt") -> Toolchain:
     )
     if binary is None or binary.get("Op") is None:
         raise ToolchainError("could not read shfmt AST for the || operator")
-    statements = canon_tree.get("Stmts") or []
+    statements = list_member(canon_tree, "Stmts")
     if not statements:
         raise ToolchainError("could not read shfmt AST for the completion check")
     return Toolchain(shfmt, binary["Op"], strip_positions(statements[0]))
@@ -425,7 +428,7 @@ def rebinding_line(tree: Node) -> tuple[int, str] | None:
     not, or a function named for a command in READ_BY_NAME."""
     for node in walk(tree):
         if node.get("Type") == "FuncDecl":
-            name = str((node.get("Name") or {}).get("Value", ""))
+            name = str(node_member(node, "Name").get("Value", ""))
             if name in READ_BY_NAME:
                 return line_of(node), f"defines a function named `{name}`"
     for call in calls(tree):
