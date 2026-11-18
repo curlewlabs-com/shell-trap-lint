@@ -61,3 +61,9 @@ the tag immutable.
 1. Bump `version` in `pyproject.toml` and merge that to `main`.
 2. Tag the merge commit `vMAJOR.MINOR.PATCH` and push the tag.
 3. Publish it: `gh release create vMAJOR.MINOR.PATCH --verify-tag`.
+
+## License
+
+By submitting a contribution for inclusion in this project, you agree that it
+is licensed under the MIT and Apache-2.0 licenses, as the README's License
+section describes, without any additional terms or conditions.
