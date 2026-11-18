@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -54,6 +56,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - if: matrix.python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -82,6 +86,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run actionlint
         # The installer script is pinned to a commit rather than its main
         # branch, and fetches the release named after it. Renovate moves the
@@ -91,10 +97,21 @@ jobs:
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color
 
+  baseline:
+    # The checks every Curlew Labs repository runs, in one place:
+    # https://github.com/curlewlabs-com/ci-baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: curlewlabs-com/ci-baseline@c82082df9a3c5e6dab047d9ddb92f130f1537d8e # v0.1.1
+
   conclusion:
     # The one check branch protection requires, so adding or renaming a job
     # above needs no settings change - only this list.
-    needs: [lint, test, actionlint]
+    needs: [lint, test, actionlint, baseline]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -103,4 +120,5 @@ jobs:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
           ACTIONLINT: ${{ needs.actionlint.result }}
-        run: test "$LINT" = success && test "$TEST" = success && test "$ACTIONLINT" = success
+          BASELINE: ${{ needs.baseline.result }}
+        run: test "$LINT" = success && test "$TEST" = success && test "$ACTIONLINT" = success && test "$BASELINE" = success
