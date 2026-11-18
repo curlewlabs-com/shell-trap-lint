@@ -31,14 +31,8 @@ jobs:
           python-version: "3.14"
       - name: Install the pinned tools
         run: python -m pip install -r requirements-dev.txt
-      - name: ruff format
-        run: ruff format --check .
-      - name: ruff check
-        run: ruff check .
       - name: mypy (strict)
         run: mypy
-      - name: shellcheck
-        run: shellcheck .github/install-shfmt.sh
 
   test:
     # The oldest Python the package supports, and the python3 each runner
@@ -52,7 +46,7 @@ jobs:
             python: "3.12"
           - runner: ubuntu-24.04
           - runner: ubuntu-24.04-arm
-          - runner: macos-15
+          - runner: macos-26
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,6 +57,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install shfmt
+        # A test dependency: the tests parse shell through it. The baseline
+        # job runs its own shfmt as a formatter.
         run: |
           .github/install-shfmt.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
@@ -82,21 +78,6 @@ jobs:
             exit 1
           fi
 
-  actionlint:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Run actionlint
-        # The installer script is pinned to a commit rather than its main
-        # branch, and fetches the release named after it. Renovate moves the
-        # release; the script's commit moves by hand, and need not match.
-        run: |
-          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color
-
   baseline:
     # The checks every Curlew Labs repository runs, in one place:
     # https://github.com/curlewlabs-com/ci-baseline
@@ -106,12 +87,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: curlewlabs-com/ci-baseline@c82082df9a3c5e6dab047d9ddb92f130f1537d8e # v0.1.1
+      - uses: curlewlabs-com/ci-baseline@f05f17a38ba2dfbaf0cde130a375b346e9a923a2 # v0.2.0
 
   conclusion:
     # The one check branch protection requires, so adding or renaming a job
     # above needs no settings change - only this list.
-    needs: [lint, test, actionlint, baseline]
+    needs: [lint, test, baseline]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -119,6 +100,5 @@ jobs:
         env:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
-          ACTIONLINT: ${{ needs.actionlint.result }}
           BASELINE: ${{ needs.baseline.result }}
-        run: test "$LINT" = success && test "$TEST" = success && test "$ACTIONLINT" = success && test "$BASELINE" = success
+        run: test "$LINT" = success && test "$TEST" = success && test "$BASELINE" = success
