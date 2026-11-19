@@ -58,7 +58,7 @@ It needs Python 3.12 or newer and `shfmt` on `PATH`. It has no Python
 dependencies.
 
 ```sh
-pip install git+https://github.com/curlewlabs-com/shell-trap-lint@v0.1.2
+pip install git+https://github.com/curlewlabs-com/shell-trap-lint@v0.1.4
 
 shell-trap-lint deploy.sh scripts/*.sh   # scripts
 shell-trap-lint --test tests/*.sh        # tests
