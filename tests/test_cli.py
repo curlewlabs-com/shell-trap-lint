@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,6 +70,30 @@ class TheCommand(unittest.TestCase):
         path = self.write("d.sh", "#!/bin/sh\necho hi\n")
         with mock.patch.dict(os.environ, {"PATH": str(self.root)}):
             status, out, err = run([path])
+        self.assertEqual((status, out), (1, ""))
+        self.assertIn("could not run", err)
+
+    def test_shfmt_names_one_off_path(self) -> None:
+        # A build that provides its own shfmt has none on PATH. The path is
+        # relative, as a build passes one, so it resolves against the working
+        # directory; each form must parse with it, and the test form's finding
+        # shows the file was judged rather than skipped.
+        shfmt = shutil.which("shfmt")
+        assert shfmt is not None, "the tests need shfmt on PATH"
+        (self.root / "bin").mkdir()
+        (self.root / "bin" / "shfmt").symlink_to(shfmt)
+        path = self.write("e.sh", BARE_RM_WITH_CHECK)
+        with mock.patch.dict(os.environ, {"PATH": str(self.root)}):
+            self.assertEqual(run(["--shfmt", "bin/shfmt", path]), (0, "", ""))
+            status, out, _ = run(["--test", "--shfmt", "bin/shfmt", path])
+        self.assertEqual(status, 1)
+        self.assertIn("e.sh:4:", out)
+
+    def test_a_shfmt_that_does_not_run_does_not_pass(self) -> None:
+        # A wrong path judged nothing, so it must fail as a missing shfmt on
+        # PATH does, never fall back to the shfmt PATH still holds here.
+        path = self.write("f.sh", "#!/bin/sh\necho hi\n")
+        status, out, err = run(["--shfmt", str(self.root / "no-shfmt"), path])
         self.assertEqual((status, out), (1, ""))
         self.assertIn("could not run", err)
 

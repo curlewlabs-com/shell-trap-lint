@@ -13,8 +13,9 @@ Do not open a public issue for security vulnerabilities.
 The lint reads the files it is given and runs `shfmt` to parse them. It never
 runs the shell it reads. The security surface is:
 
-- **The `shfmt` it runs.** This is the first `shfmt` on `PATH`, trusted the
-  way `python3` is. File contents reach it on stdin, never as arguments or
+- **The `shfmt` it runs.** This is the one `--shfmt` names (looked up on
+  `PATH` when it is a bare name), or else the first `shfmt` on `PATH`, trusted
+  the way `python3` is. File contents reach it on stdin, never as arguments or
   through a shell.
 - **The files it reads.** These are the paths named on the command line, read
   as UTF-8.

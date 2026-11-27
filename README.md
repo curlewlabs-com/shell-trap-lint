@@ -54,21 +54,25 @@ record. This lint checks that every EXIT trap does both, in one exact form.
 
 ## How to use it
 
-It needs Python 3.12 or newer and `shfmt` on `PATH`. It has no Python
-dependencies.
+It needs Python 3.12 or newer and `shfmt`, from `PATH` unless `--shfmt`
+names one. It has no Python dependencies.
 
 ```sh
 pip install git+https://github.com/curlewlabs-com/shell-trap-lint@v0.1.4
 
 shell-trap-lint deploy.sh scripts/*.sh   # scripts
 shell-trap-lint --test tests/*.sh        # tests
+shell-trap-lint --shfmt tools/shfmt --test tests/*.sh   # this shfmt
 ```
 
 It judges exactly the files you name. It prints one `path:line: message` per
 finding and exits 1 if there is any. It also exits 1, with the reason on
-stderr, when it cannot run at all (for example, no `shfmt` on `PATH`), so a
-lint that examined nothing never reads as clean. `python3 -m shell_trap_lint`
-works the same way.
+stderr, when it cannot run at all (for example, no `shfmt` on `PATH`, or none
+at the `--shfmt` path), so a lint that examined nothing never reads as clean.
+`--shfmt` is for a build that provides its own `shfmt`. A path containing a
+`/` resolves against the working directory, so write `./shfmt` for one there; a
+bare name is looked up on `PATH`. `python3 -m shell_trap_lint` works the same
+way.
 
 A test with no EXIT trap passes, and so does `trap - EXIT`, which installs
 nothing. In the script form, `RUN_COMPLETE` and `SUITE_COMPLETE` are reserved
